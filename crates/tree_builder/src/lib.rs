@@ -289,17 +289,15 @@ fn build_shortest_paths_data(
     let mut shortest_paths: HashMap<String, u32> = HashMap::new();
 
     // Set the start file distance to 0
-    shortest_paths.insert(start_file.to_string(), 0);
+    shortest_paths.insert(start_file.to_string(), 1);
 
     for (target, (sources, distances)) in links {
         for source in sources {
-            if source != start_file {
-                let distance = distances.get(&source).copied().unwrap_or(1);
-                shortest_paths
-                    .entry(source)
-                    .and_modify(|dist| *dist = (*dist).min(distance))
-                    .or_insert(distance);
-            }
+            let distance = distances.get(&source).copied().unwrap_or(1);
+            shortest_paths
+                .entry(source)
+                .and_modify(|dist| *dist = (*dist).min(distance))
+                .or_insert(distance);
         }
     }
     shortest_paths.into_iter().collect()
