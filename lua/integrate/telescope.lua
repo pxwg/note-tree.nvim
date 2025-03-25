@@ -1,3 +1,4 @@
+--- The telescope module for the double chain graph
 local M = {}
 local finders = require("telescope.finders")
 local image_preview = require("util.telescope-figure")
@@ -8,10 +9,18 @@ local telescope = require("telescope")
 
 local double_chain = require("utils.get_graph").double_chain
 
-local function double_chain_search(opts, max)
+--- Search for the shortest path between two nodes with a double chain graph and telescope.nvim
+--- @param opts table?
+--- @param start_node BiDirectionalNode?
+--- @param max number?
+--- @param base_dir string?
+local function double_chain_search(opts, start_node, max, base_dir)
   opts = opts or { width = 0.5 }
-  local start_node = { filepath = vim.fn.expand("%:p"), filename = vim.fn.expand("%:t:r") }
-  local sorted_results = double_chain:get_nodes(start_node, max)
+  base_dir = base_dir or vim.fn.expand("~/personal-wiki")
+  max = max or 10
+  start_node = start_node or { filepath = vim.fn.expand("%:p"), filename = vim.fn.expand("%:t:r") }
+  local sorted_results = double_chain:get_nodes(start_node, max, base_dir)
+  -- print(vim.inspect(sorted_results)) -- DEBUG
   table.sort(sorted_results, function(a, b)
     return a.path_length < b.path_length
   end)
@@ -69,10 +78,13 @@ local function double_chain_search(opts, max)
     :find()
 end
 
-local function double_chain_insert(opts, max)
+local function double_chain_insert(opts, start_node, max, base_dir)
   opts = opts or { width = 0.5 }
-  local start_node = { filepath = vim.fn.expand("%:p"), filename = vim.fn.expand("%:t:r") }
-  local sorted_results = double_chain:calculate_shortest_paths(start_node, max + 1)
+  base_dir = base_dir or vim.fn.expand("~/personal-wiki")
+  max = max or 10
+  start_node = start_node or { filepath = vim.fn.expand("%:p"), filename = vim.fn.expand("%:t:r") }
+  local sorted_results = double_chain:get_nodes(start_node, max, base_dir)
+  -- print(vim.inspect(sorted_results)) -- DEBUG
   table.sort(sorted_results, function(a, b)
     return a.path_length < b.path_length
   end)
