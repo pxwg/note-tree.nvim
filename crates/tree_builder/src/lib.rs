@@ -33,10 +33,14 @@ struct DoubleChainGraph {
 /// ## Returns
 /// The absolute path
 fn convert_to_absolute_path(path: &str, base_dir: &str) -> String {
-    if !path.starts_with("/") {
-        format!("{}/{}", base_dir, path.replace("./", ""))
-    } else {
+    let path_obj = Path::new(path);
+    if path_obj.is_absolute() {
         path.to_string()
+    } else {
+        Path::new(base_dir)
+            .join(path.strip_prefix("./").unwrap_or(path))
+            .to_string_lossy()
+            .into_owned()
     }
 }
 
@@ -51,11 +55,12 @@ fn convert_to_absolute_path(path: &str, base_dir: &str) -> String {
 async fn execute_command_async(cmd: &str, args: &[&str]) -> String {
     let cmd = cmd.to_string();
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+
     tokio::task::spawn_blocking(move || {
-        Command::new(cmd)
+        Command::new(&cmd)
             .args(&args)
             .output()
-            .map(|output| String::from_utf8_lossy(&output.stdout).to_string())
+            .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
             .unwrap_or_default()
     })
     .await
@@ -229,15 +234,15 @@ async fn process_node_async(node: &Node, base_dir: &str) -> ProcessResult {
         .iter()
         .chain(backward.iter())
         .map(|link| Node {
-            filepath: link.clone(),
+            filepath: link.to_string(),
             distance: node.distance + 1,
         })
         .collect();
 
     let mut backward_links = HashMap::new();
-    for bl in &backward {
+    for bl in backward {
         backward_links
-            .entry(bl.clone())
+            .entry(bl)
             .or_insert_with(Vec::new)
             .push(node.filepath.clone());
     }
@@ -259,7 +264,7 @@ fn note_tree(lua: &Lua) -> LuaResult<LuaTable> {
             let filepath: String = start_node.get("filepath")?;
             let filename: String = start_node.get("filename")?;
 
-            // Get base directory - modify this as needed
+            // Get base directory from environment or use default
             let base_dir = std::env::var("HOME").unwrap_or_default() + "/personal-wiki";
 
             // Create and run a runtime for the async operations
