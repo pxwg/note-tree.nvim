@@ -53,13 +53,15 @@ end
 --- Generate a double chain graph with lib tree_builder
 ---@param start_node BiDirectionalNode
 ---@param max_distance number
+---@param base_dir string?
 ---@return BiDirectionalShortestPath[]
 ---@usage local graph = require("utils.tree_builder").generate_double_chain_graph(start_node, max_distance)
-function M.generate_double_chain_graph(start_node, max_distance)
+function M.generate_double_chain_graph(start_node, max_distance, base_dir)
+  base_dir = base_dir or vim.fn.expand("~/personal-wiki")
   if not ensure_loaded() then
     return {}
   end
-  return state.tree_builder.generate_double_chain_graph(start_node, max_distance)
+  return state.tree_builder.generate_double_chain_graph(start_node, max_distance, base_dir)
 end
 
 M.initialize = initialize

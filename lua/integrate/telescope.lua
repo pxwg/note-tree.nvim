@@ -6,12 +6,12 @@ local previewers = require("telescope.previewers")
 local sorters = require("telescope.sorters")
 local telescope = require("telescope")
 
-local double_chain = require("util.note_node_get_graph").double_chain
+local double_chain = require("utils.get_graph").double_chain
 
 local function double_chain_search(opts, max)
   opts = opts or { width = 0.5 }
   local start_node = { filepath = vim.fn.expand("%:p"), filename = vim.fn.expand("%:t:r") }
-  local sorted_results = double_chain:calculate_shortest_paths(start_node, max)
+  local sorted_results = double_chain:get_nodes(start_node, max)
   table.sort(sorted_results, function(a, b)
     return a.path_length < b.path_length
   end)
