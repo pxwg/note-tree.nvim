@@ -17,11 +17,13 @@ local double_chain = {}
 
 ---@param start_node BiDirectionalNode?
 ---@param max number?
+---@param base_dir string?
 ---@return BiDirectionalShortestPath[]
-function double_chain:get_nodes(start_node, max)
+function double_chain:get_nodes(start_node, max, base_dir)
+  base_dir = base_dir or vim.fn.expand("~/personal-wiki")
   start_node = start_node or self
-  max = max or math.huge
-  local rust_processor = require("utils.tree_builder").generate_double_chain_graph(start_node, max)
+  max = max or 10
+  local rust_processor = require("utils.tree_builder").generate_double_chain_graph(start_node, max, base_dir)
   return rust_processor
 end
 

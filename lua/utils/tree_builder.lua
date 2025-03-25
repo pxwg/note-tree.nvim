@@ -58,6 +58,8 @@ end
 ---@usage local graph = require("utils.tree_builder").generate_double_chain_graph(start_node, max_distance)
 function M.generate_double_chain_graph(start_node, max_distance, base_dir)
   base_dir = base_dir or vim.fn.expand("~/personal-wiki")
+  start_node = start_node or { filepath = vim.fn.expand("%:p"), filename = vim.fn.expand("%:t:r") }
+  max_distance = max_distance or 10
   if not ensure_loaded() then
     return {}
   end
