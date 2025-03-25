@@ -1,3 +1,6 @@
+/// TODO: Seperate the graph generation logic into a separate module
+/// TODO: Add tests for the graph generation logic
+/// TODO: Fully rust api
 use mlua::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -24,6 +27,12 @@ struct DoubleChainNode {
 struct DoubleChainGraph {
     node: DoubleChainNode,
     distance: u32,
+}
+
+// Structure for the output of the graph
+struct ShortestPath {
+    node: String,
+    path_length: u32,
 }
 
 /// Convert relative paths to absolute paths
