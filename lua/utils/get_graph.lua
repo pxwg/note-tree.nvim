@@ -15,35 +15,14 @@ local double_chain = {}
 ---@field node string
 ---@field path_length number
 
----@param start_node BiDirectionalNode
----@param max_distance number
----@return table<string, BiDirectionalGraph>
-function double_chain:find_all_related(start_node, max_distance)
-  local rust_processor = require("utils.tree_builder").generate_double_chain_graph(start_node, max_distance)
-  return rust_processor
-end
-
----@param start_node BiDirectionalNode
----@param max number|nil
+---@param start_node BiDirectionalNode?
+---@param max number?
 ---@return BiDirectionalShortestPath[]
 function double_chain:calculate_shortest_paths(start_node, max)
+  start_node = start_node or self
   max = max or math.huge
-  local graph = self:find_all_related(start_node, max) or {}
-  graph = graph or {}
-
-  local shortest_paths = {}
-
-  for _, data in pairs(graph) do
-    for i = 1, #data do
-      table.insert(shortest_paths, { node = data[i].links.filepath, path_length = data[i].distance })
-    end
-  end
-
-  table.sort(shortest_paths, function(a, b)
-    return a.path_length < b.path_length
-  end)
-
-  return shortest_paths
+  local rust_processor = require("utils.tree_builder").generate_double_chain_graph(start_node, max)
+  return rust_processor
 end
 
 --- @param opt table
