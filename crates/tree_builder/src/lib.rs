@@ -32,7 +32,7 @@ struct DoubleChainGraph {
 // Structure for the output of the graph
 struct ShortestPath {
     node: String,
-    path_length: u32,
+    path_: u32,
 }
 
 /// Convert relative paths to absolute paths
@@ -271,59 +271,38 @@ fn note_tree(lua: &Lua) -> LuaResult<LuaTable> {
         lua.create_function(|lua, (start_node, max_distance): (LuaTable, u32)| {
             // Extract start node data from Lua table
             let filepath: String = start_node.get("filepath")?;
-            let filename: String = start_node.get("filename")?;
+            let _filename: String = start_node.get("filename")?;
 
-            // Get base directory from environment or use default
             let base_dir = std::env::var("HOME").unwrap_or_default() + "/personal-wiki";
 
-            // Create and run a runtime for the async operations
             let rt = tokio::runtime::Runtime::new()?;
             let links = rt.block_on(generate_graph_async(&filepath, max_distance, &base_dir));
 
-            // Convert the result to a Lua table
-            let result_table = lua.create_table()?;
+            let result_array = lua.create_table()?;
+            let mut index = 1;
 
             for (target, (sources, distances)) in links {
-                let target_name = Path::new(&target)
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string();
-
-                // Create or get the array for this target
-                let target_array = if result_table.contains_key(target_name.clone())? {
-                    result_table.get(target_name.clone())?
-                } else {
-                    let array = lua.create_table()?;
-                    result_table.set(target_name.clone(), array.clone())?;
-                    array
-                };
+                let target_table = lua.create_table()?;
+                target_table.set("node", target.clone())?;
+                let path_length = if target == filepath { 0 } else { 1 };
+                target_table.set("path_length", path_length)?;
+                result_array.raw_set(index, target_table)?;
+                index += 1;
 
                 for source in sources {
-                    let source_name = Path::new(&source)
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string();
+                    if source != filepath {
+                        let source_table = lua.create_table()?;
+                        source_table.set("node", source.clone())?;
 
-                    let node_table = lua.create_table()?;
-                    let node_info = lua.create_table()?;
+                        let distance = distances.get(&source).copied().unwrap_or(1);
+                        source_table.set("path_length", distance)?;
 
-                    node_info.set("filepath", source.clone())?;
-                    node_info.set("filename", source_name)?;
-
-                    node_table.set("links", node_info)?;
-
-                    // Use the actual distance from our tracking
-                    let distance = distances.get(&source).copied().unwrap_or(1);
-                    node_table.set("distance", distance)?;
-
-                    // Append to the array instead of overwriting
-                    let len = target_array.raw_len() as i64;
-                    target_array.raw_insert(len + 1, node_table)?;
+                        result_array.raw_set(index, source_table)?;
+                        index += 1;
+                    }
                 }
             }
-            Ok(result_table)
+            Ok(result_array)
         })?,
     );
 
