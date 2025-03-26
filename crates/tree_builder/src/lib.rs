@@ -248,8 +248,11 @@ async fn generate_graph_async(
 /// ## Returns
 /// A ProcessResult containing new nodes and backward links
 async fn process_node_async(node: &Node, base_dir: &str) -> ProcessResult {
-    let forward = get_forward_links_async(&node.filepath, base_dir).await;
-    let backward = get_backward_links_async(&node.filepath, base_dir).await;
+    // Run both forward and backward link searches in parallel
+    let (forward, backward) = futures::join!(
+        get_forward_links_async(&node.filepath, base_dir),
+        get_backward_links_async(&node.filepath, base_dir)
+    );
 
     let new_nodes = forward
         .iter()
