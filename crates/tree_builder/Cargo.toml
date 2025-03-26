@@ -16,6 +16,7 @@ luajit = ["mlua/luajit"]
 
 [dependencies]
 fnv = "1.0.7"
+lazy_static = "1.5.0"
 memchr = "2.5.0"
 regex = "1.9.1"
 mlua = { workspace = true }
