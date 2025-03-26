@@ -2,6 +2,7 @@
 local M = {}
 local finders = require("telescope.finders")
 local image_preview = require("util.telescope-figure")
+local note_tree = require("note-tree")
 local pickers = require("telescope.pickers")
 local previewers = require("telescope.previewers")
 local sorters = require("telescope.sorters")
@@ -16,7 +17,7 @@ local double_chain = require("utils.get_graph").double_chain
 --- @param base_dir string?
 local function double_chain_search(opts, start_node, max, base_dir)
   opts = opts or { width = 0.5 }
-  base_dir = base_dir or vim.fn.expand("~/personal-wiki")
+  base_dir = base_dir or vim.tbl_extend("force", {}, note_tree.opts).root
   max = max or 10
   start_node = start_node or { filepath = vim.fn.expand("%:p"), filename = vim.fn.expand("%:t:r") }
   local sorted_results = double_chain:get_nodes(start_node, max, base_dir)

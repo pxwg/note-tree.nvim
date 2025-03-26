@@ -1,11 +1,12 @@
 --- TODO: add customizable base directory
 local usrcmd = vim.api.nvim_create_user_command
+local note_tree = require("note-tree")
 
 --- search and jump to the node via local tree
 usrcmd("NoteTreeLocal", function(opts)
   local start_time = vim.uv.hrtime()
 
-  local number = tonumber(opts.fargs[1]) or 10
+  local number = tonumber(opts.fargs[1]) or vim.tbl_deep_extend("force", {}, note_tree.opts).max_depth
   local local_node = { filepath = vim.fn.expand("%:p"), filename = vim.fn.expand("%:t:r") }
   local base_dir = vim.fn.expand("~/personal-wiki")
   require("integrate.telescope").double_chain_search({}, local_node, number + 1, base_dir)
@@ -19,7 +20,7 @@ end, { nargs = "?" })
 usrcmd("NoteTreeLocalInsert", function(opts)
   local start_time = vim.uv.hrtime()
 
-  local number = tonumber(opts.fargs[1]) or 10
+  local number = tonumber(opts.fargs[1]) or vim.tbl_deep_extend("force", {}, note_tree.opts).max_depth
   local local_node = { filepath = vim.fn.expand("%:p"), filename = vim.fn.expand("%:t:r") }
   local base_dir = vim.fn.expand("~/personal-wiki")
   require("integrate.telescope").double_chain_insert({}, local_node, number + 1, base_dir)

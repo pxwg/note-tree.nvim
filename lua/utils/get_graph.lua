@@ -1,4 +1,5 @@
 local M = {}
+local note_tree = require("note-tree")
 
 --- @class BiDirectionalNode
 --- @field filepath string
@@ -20,20 +21,13 @@ local double_chain = {}
 ---@param base_dir string?
 ---@return BiDirectionalShortestPath[]
 function double_chain:get_nodes(start_node, max, base_dir)
-  base_dir = base_dir or vim.fn.expand("~/personal-wiki")
+  base_dir = base_dir or vim.tbl_extend("force", {}, note_tree.opts).root
   start_node = start_node or self
   max = max or 10
   local rust_processor = require("utils.tree_builder").generate_double_chain_graph(start_node, max, base_dir)
   return rust_processor
 end
 
---- @param opt table
---- @param max number
-local function show_buffer_inlines_menu(opt, max)
-  require("integrate.telescope").double_chain_search(opt, max + 1)
-end
-
-M.show_buffer_inlines_menu = show_buffer_inlines_menu
 M.double_chain = double_chain
 
 return M
