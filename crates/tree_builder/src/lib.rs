@@ -1,9 +1,15 @@
 /// TODO: Seperate the graph generation logic into a separate module
 /// TODO: Add tests for the graph generation logic
+use fnv::FnvBuildHasher;
+use lazy_static::lazy_static;
 use mlua::prelude::*;
+use regex::Regex;
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use tokio::io::{self, AsyncBufRead, AsyncBufReadExt};
+use tokio::sync::mpsc;
+use tokio::task;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 struct Node {
@@ -75,19 +81,45 @@ async fn execute_command_async(cmd: &str, args: &[&str]) -> String {
     .unwrap_or_default()
 }
 
-/// Execute shell command and collect output asynchronously
+/// Get all forward links in a file asynchronously
 ///
 /// ## Parameters
-/// * `cmd` - The command to execute
-/// * `args` - The arguments to pass to the command
+/// * `filepath` - The file to search for links
+/// * `base_dir` - The base directory to use
 ///
 /// ## Returns
-/// The output of the command as a string
+/// A vector of forward links
 async fn get_forward_links_async(filepath: &str, base_dir: &str) -> Vec<String> {
-    let pattern = "\\[.*?\\]\\((.*?\\.md)\\)";
-    let args = vec!["-o", "--no-line-number", pattern, filepath];
-    let output = execute_command_async("rg", &args).await;
-    parse_links(&output, base_dir)
+    // Compile regex once and reuse
+    lazy_static! {
+        static ref MARKDOWN_LINK_PATTERN: Regex = Regex::new(r"\[(.*?)\]\((.*?\.md)\)").unwrap();
+    }
+
+    // Use async file reading
+    let content = match tokio::fs::read_to_string(filepath).await {
+        Ok(content) => content,
+        Err(_) => return Vec::new(),
+    };
+
+    // Pre-allocate with reasonable capacity based on typical markdown files
+    let mut links = Vec::with_capacity(10);
+
+    // Process line by line with early filtering
+    for line in content.lines() {
+        // Quick check to skip lines without potential links
+        if !line.contains('[') || !line.contains("](") {
+            continue;
+        }
+
+        // Apply regex only on promising lines
+        for cap in MARKDOWN_LINK_PATTERN.captures_iter(line) {
+            if let Some(link) = cap.get(2) {
+                links.push(convert_to_absolute_path(link.as_str(), base_dir));
+            }
+        }
+    }
+
+    links
 }
 
 /// Get all backward links in a file asynchronously
@@ -99,19 +131,64 @@ async fn get_forward_links_async(filepath: &str, base_dir: &str) -> Vec<String> 
 /// ## Returns
 /// A vector of backward links
 async fn get_backward_links_async(filepath: &str, base_dir: &str) -> Vec<String> {
-    let filename = Path::new(filepath)
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy();
-    let directory = Path::new(filepath)
-        .parent()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_default();
+    // Extract filename and directory once
+    let path = Path::new(filepath);
+    let filename = match path.file_name() {
+        Some(name) => name.to_string_lossy(),
+        None => return Vec::new(),
+    };
 
-    let pattern = format!("^.*\\[.*?\\]\\((./{})\\)", filename);
-    let args = vec!["-o", "--no-line-number", &pattern, &directory];
-    let output = execute_command_async("rg", &args).await;
-    parse_file_paths(&output, base_dir)
+    let directory = match path.parent() {
+        Some(dir) => dir.to_string_lossy().to_string(),
+        None => return Vec::new(),
+    };
+
+    // Create regex for the specific filename only once
+    let link_pattern = Regex::new(&format!(
+        r"\[(.*?)\]\((\.?/{0})\)",
+        regex::escape(&filename)
+    ))
+    .unwrap();
+
+    let mut entries = match tokio::fs::read_dir(&directory).await {
+        Ok(entries) => entries,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut backward_links = Vec::with_capacity(10);
+
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let path = entry.path();
+
+        if path.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        if path.to_string_lossy() == filepath {
+            continue;
+        }
+
+        if let Ok(content) = tokio::fs::read_to_string(&path).await {
+            if !content.contains(filename.as_ref()) {
+                continue;
+            }
+
+            for line in content.lines() {
+                if !line.contains('[') || !line.contains(&format!("]({})", filename)) {
+                    continue;
+                }
+
+                if link_pattern.is_match(line) {
+                    backward_links.push(convert_to_absolute_path(
+                        path.to_string_lossy().as_ref(),
+                        base_dir,
+                    ));
+                    break; // Found link, no need to check more lines
+                }
+            }
+        }
+    }
+
+    backward_links
 }
 
 /// Parse links from ripgrep output
@@ -126,9 +203,11 @@ fn parse_links(output: &str, base_dir: &str) -> Vec<String> {
     let mut links = Vec::with_capacity(output.lines().count());
 
     // Pre-compile the pattern for parsing
-    let pattern = regex::Regex::new(r"\[.*?\]\((.*?\.md)\)").unwrap();
+    lazy_static! {
+        static ref LINK_PATTERN: Regex = Regex::new(r"\[.*?\]\((.*?\.md)\)").unwrap();
+    }
 
-    for cap in pattern.captures_iter(output) {
+    for cap in LINK_PATTERN.captures_iter(output) {
         if let Some(link) = cap.get(1) {
             links.push(convert_to_absolute_path(link.as_str(), base_dir));
         }
@@ -149,7 +228,6 @@ fn parse_file_paths(output: &str, base_dir: &str) -> Vec<String> {
     let mut paths = Vec::with_capacity(output.lines().count());
 
     for line in output.lines() {
-        // Use memchr for faster substring search
         if let Some(idx) = memchr::memchr(b':', line.as_bytes()) {
             let file_path = &line[..idx];
             paths.push(convert_to_absolute_path(file_path, base_dir));
@@ -173,70 +251,71 @@ async fn generate_graph_async(
     max_depth: u32,
     base_dir: &str,
 ) -> HashMap<String, (Vec<String>, HashMap<String, u32>)> {
-    // Use more efficient hash maps with faster hashing algorithm
-    let mut all_links: HashMap<String, (Vec<String>, HashMap<String, u32>), fnv::FnvBuildHasher> =
-        HashMap::with_hasher(fnv::FnvBuildHasher::default());
-    let mut node_distances: HashMap<String, u32, fnv::FnvBuildHasher> =
-        HashMap::with_hasher(fnv::FnvBuildHasher::default());
-    let mut visited: HashSet<String, fnv::FnvBuildHasher> =
-        HashSet::with_hasher(fnv::FnvBuildHasher::default());
+    type FnvHashMap<K, V> = HashMap<K, V, FnvBuildHasher>;
+    type FnvHashSet<K> = HashSet<K, FnvBuildHasher>;
 
-    let mut current_layer = Vec::with_capacity(100); // Reasonable initial capacity
+    let mut all_links: FnvHashMap<String, (Vec<String>, FnvHashMap<String, u32>)> =
+        FnvHashMap::default();
+    let mut node_distances: FnvHashMap<String, u32> = FnvHashMap::default();
+    let mut visited: FnvHashSet<String> = FnvHashSet::default();
+
+    let mut current_layer = Vec::with_capacity(100);
     current_layer.push(Node {
         filepath: start_file.to_string(),
         distance: 0,
     });
     visited.insert(start_file.to_string());
+    node_distances.insert(start_file.to_string(), 0);
 
-    for _ in 0..max_depth {
-        // Process nodes in parallel with configurable batch size
-        let batch_size = 16; // Optimize based on your workload
-        let mut tasks = Vec::with_capacity(current_layer.len());
-
-        for nodes_chunk in current_layer.chunks(batch_size) {
-            for node in nodes_chunk {
-                tasks.push(process_node_async(node, base_dir));
-            }
-        }
-
-        let results = futures::future::join_all(tasks).await;
-        current_layer = Vec::with_capacity(results.len() * 4); // Estimate growth factor
-
-        for result in results {
-            for (target, sources) in result.backward_links {
-                all_links
-                    .entry(target.clone())
-                    .or_insert_with(|| (Vec::with_capacity(sources.len()), HashMap::default()))
-                    .0
-                    .extend(sources.clone());
-
-                // Track the distance for each source to target
-                for source in sources {
-                    let current_distance = node_distances.get(&source).copied().unwrap_or(0) + 1;
-                    all_links
-                        .entry(target.clone())
-                        .or_insert_with(|| (Vec::new(), HashMap::default()))
-                        .1
-                        .insert(source.clone(), current_distance);
-                }
-            }
-
-            for new_node in result.new_nodes {
-                if !visited.contains(&new_node.filepath) {
-                    visited.insert(new_node.filepath.clone());
-                    node_distances.insert(new_node.filepath.clone(), new_node.distance);
-                    current_layer.push(new_node);
-                }
-            }
-        }
-
+    for current_depth in 0..max_depth {
         if current_layer.is_empty() {
             break;
         }
+
+        let mut tasks = Vec::with_capacity(current_layer.len());
+        for node in &current_layer {
+            tasks.push(process_node_async(node, base_dir));
+        }
+
+        let results = futures::future::join_all(tasks).await;
+        let mut next_layer = Vec::with_capacity(results.len() * 4); // Estimate growth factor
+
+        for result in results {
+            for (target, sources) in &result.backward_links {
+                let entry = all_links
+                    .entry(target.clone())
+                    .or_insert_with(|| (Vec::with_capacity(sources.len()), FnvHashMap::default()));
+
+                entry.0.extend(sources.iter().cloned());
+
+                for source in sources {
+                    let source_distance = node_distances.get(source).copied().unwrap_or(0);
+                    let target_distance = source_distance + 1;
+                    entry.1.insert(source.clone(), target_distance);
+                }
+            }
+
+            // Add new nodes from the result to the next layer
+            for new_node in result.new_nodes {
+                if visited.insert(new_node.filepath.clone()) {
+                    node_distances.insert(new_node.filepath.clone(), new_node.distance);
+                    next_layer.push(new_node);
+                }
+            }
+        }
+
+        current_layer = next_layer;
     }
 
-    // Convert to standard HashMap for compatibility
-    all_links.into_iter().collect()
+    // Convert FnvHashMap to standard HashMap to match the return type
+    all_links
+        .into_iter()
+        .map(|(k, (v1, v2))| {
+            // Convert inner FnvHashMap to standard HashMap
+            let std_v2: HashMap<String, u32> = v2.into_iter().collect();
+            (k, (v1, std_v2))
+        })
+        .collect()
 }
 
 /// Process a single node in the graph to find its links
@@ -288,13 +367,13 @@ fn build_shortest_paths_data(
     start_file: &str,
     links: HashMap<String, (Vec<String>, HashMap<String, u32>)>,
 ) -> Vec<(String, u32)> {
-    // Use a HashMap to track the shortest distance for each node
-    let mut shortest_paths: HashMap<String, u32> = HashMap::new();
+    // Track the shortest distance for each node
+    let mut shortest_paths: HashMap<String, u32> = HashMap::with_capacity(links.len() * 2);
 
-    // Set the start file distance to 0
+    // Set the start file distance to 1 (as per original logic)
     shortest_paths.insert(start_file.to_string(), 1);
 
-    for (target, (sources, distances)) in links {
+    for (_target, (sources, distances)) in links {
         for source in sources {
             let distance = distances.get(&source).copied().unwrap_or(1);
             shortest_paths
