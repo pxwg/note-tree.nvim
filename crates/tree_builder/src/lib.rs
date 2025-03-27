@@ -1,10 +1,11 @@
-/// TODO: Seperate the graph generation logic into a separate module
-/// TODO: Add tests for the graph generation logic
 use fnv::FnvBuildHasher;
 use lazy_static::lazy_static;
 use log::{debug, info, warn};
 use mlua::prelude::*;
 use regex::Regex;
+/// TODO: Seperate the graph generation logic into a separate module
+/// TODO: Add tests for the graph generation logic
+use std::collections::VecDeque;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -64,7 +65,7 @@ pub fn initialize() {
 
     builder.init();
 
-    info!("Tree builder logger initialized at: {}", log_path);
+    // info!("Tree builder logger initialized at: {}", log_path);
 }
 
 /// Convert relative paths to absolute paths
@@ -290,8 +291,8 @@ async fn generate_graph_async(
 
     let mut all_links: FnvHashMap<String, (Vec<String>, FnvHashMap<String, u32>)> =
         FnvHashMap::default();
-    let mut node_distances: FnvHashMap<String, u32> = FnvHashMap::default();
     let mut visited: FnvHashSet<String> = FnvHashSet::default();
+    let mut node_distances: FnvHashMap<String, u32> = FnvHashMap::default();
 
     let mut current_layer = Vec::with_capacity(100);
     current_layer.push(Node {
@@ -301,7 +302,7 @@ async fn generate_graph_async(
     visited.insert(start_file.to_string());
     node_distances.insert(start_file.to_string(), 0);
 
-    for _current_depth in 0..max_depth {
+    for current_depth in 0..max_depth {
         if current_layer.is_empty() {
             break;
         }
@@ -323,32 +324,43 @@ async fn generate_graph_async(
                 entry.0.extend(sources.iter().cloned());
 
                 for source in sources {
-                    let source_distance = node_distances.get(source).copied().unwrap_or(0);
-                    let target_distance = source_distance + 1;
-                    entry.1.insert(source.clone(), target_distance);
+                    let distance = node_distances.get(source).copied().unwrap_or(u32::MAX);
+                    entry.1.insert(source.clone(), distance); // Use the actual distance from start node
                 }
             }
 
             // Add new nodes from the result to the next layer
             for new_node in result.new_nodes {
                 if visited.insert(new_node.filepath.clone()) {
-                    node_distances.insert(new_node.filepath.clone(), new_node.distance);
-                    next_layer.push(new_node);
+                    let distance = current_depth + 1; // Distance is based on the BFS layer
+                                                      // info!(
+                                                      //     "Adding node: {} at distance: {}",
+                                                      //     new_node.filepath, distance
+                                                      // );
+                    node_distances.insert(new_node.filepath.clone(), distance);
+                    next_layer.push(Node {
+                        filepath: new_node.filepath,
+                        distance,
+                    });
                 }
             }
         }
         current_layer = next_layer;
     }
 
-    // Convert FnvHashMap to standard HashMap to match the return type
-    all_links
+    let out = all_links
         .into_iter()
         .map(|(k, (v1, v2))| {
             // Convert inner FnvHashMap to standard HashMap
             let std_v2: HashMap<String, u32> = v2.into_iter().collect();
             (k, (v1, std_v2))
         })
-        .collect()
+        .collect();
+
+    for (k, v) in &out {
+        info!("{}: {:?}", k, v);
+    }
+    out
 }
 
 /// Process a single node in the graph to find its links
@@ -391,77 +403,50 @@ async fn process_node_async(node: &Node, base_dir: &str) -> ProcessResult {
     }
 }
 
-/// Converts graph data into a vector of node/path_length pairs
-/// ensuring each node appears only once with its shortest path length
+/// Calculates the shortest paths from start_file to all other nodes in the graph
 /// ## Parameters
 /// * `start_file` - The starting file for the graph
-/// * `links` - The graph data
+/// * `links` - The graph data from generate_graph_async
 /// ## Returns
 /// A vector of node/path_length pairs
 fn build_shortest_paths_data(
     start_file: &str,
     links: HashMap<String, (Vec<String>, HashMap<String, u32>)>,
 ) -> Vec<(String, u32)> {
-    // info!("Building shortest links from: {:?}", links);
-    // info!("Building shortest paths data from: {}", start_file);
-    info!("Graph contains {} nodes", links.len());
-
-    // Use a BFS-like approach to calculate shortest paths
-    let mut shortest_paths: HashMap<String, u32> = HashMap::new();
-    let mut queue = vec![(start_file.to_string(), 0)]; // Start with distance 0 to match graph generation
-    shortest_paths.insert(start_file.to_string(), 0);
-
-    // Collect all nodes first to ensure we include isolated nodes
+    // Collect all unique nodes
     let mut all_nodes = HashSet::new();
-    all_nodes.insert(start_file.to_string());
+    let mut node_distances = HashMap::new();
 
-    for (target, (sources, _)) in &links {
+    // Add start node
+    all_nodes.insert(start_file.to_string());
+    node_distances.insert(start_file.to_string(), 0);
+
+    // Process links to build node set and extract distances
+    for (target, (sources, source_distances)) in &links {
         all_nodes.insert(target.clone());
+
         for source in sources {
             all_nodes.insert(source.clone());
+            // Extract distances from source_distances map
+            if let Some(&distance) = source_distances.get(source) {
+                node_distances.insert(source.clone(), distance);
+            }
         }
     }
 
     debug!("Total unique nodes in graph: {}", all_nodes.len());
 
-    // Process the queue to find shortest paths
-    let mut index = 0;
-    while index < queue.len() {
-        let (current, distance) = queue[index].clone();
-        index += 1;
-
-        debug!("Processing node '{}' at distance {}", current, distance);
-
-        // If this node has outgoing links
-        if let Some((_, distances)) = links.get(&current) {
-            for (target, &target_distance) in distances {
-                let new_distance = distance + target_distance;
-                match shortest_paths.get(target) {
-                    Some(&existing) if existing <= new_distance => {}
-                    _ => {
-                        debug!("Found shorter path to '{}': {}", target, new_distance);
-                        shortest_paths.insert(target.clone(), new_distance);
-                        queue.push((target.clone(), new_distance));
-                    }
-                }
-            }
-        }
-    }
-
+    // Convert to result format
     let result: Vec<(String, u32)> = all_nodes
         .into_iter()
         .map(|node| {
-            let distance = shortest_paths.get(&node).copied().unwrap_or(u32::MAX);
-            if distance == u32::MAX {
-                warn!("Node '{}' is unreachable from start", node);
-            }
-            (node.clone(), distance)
+            let distance = *node_distances.get(&node).unwrap_or(&0);
+            (node, distance + 1)
         })
         .collect();
 
-    info!("Generated {} path entries", result.len());
+    debug!("Reused {} pre-calculated shortest paths", result.len());
     result
-    // all_nodes.collect()
 }
 
 #[mlua::lua_module]
@@ -480,30 +465,21 @@ fn note_tree(lua: &Lua) -> LuaResult<LuaTable> {
                 let rt = tokio::runtime::Runtime::new()?;
                 let links = rt.block_on(generate_graph_async(&filepath, max_distance, &base_dir));
 
+                // Process links data to get the shortest path for each node
+                let shortest_paths = build_shortest_paths_data(&filepath, links);
+
                 let result_array = lua.create_table()?;
                 let mut index = 1;
 
-                for (target, (sources, distances)) in links {
-                    let target_table = lua.create_table()?;
-                    target_table.set("node", target.clone())?;
-                    let path_length = if target == filepath { 0 } else { 1 };
-                    target_table.set("path_length", path_length)?;
-                    result_array.raw_set(index, target_table)?;
+                // Add each node with its shortest path to the result array
+                for (node, distance) in shortest_paths {
+                    let node_table = lua.create_table()?;
+                    node_table.set("node", node)?;
+                    node_table.set("path_length", distance)?;
+                    result_array.raw_set(index, node_table)?;
                     index += 1;
-
-                    for source in sources {
-                        if source != filepath {
-                            let source_table = lua.create_table()?;
-                            source_table.set("node", source.clone())?;
-
-                            let distance = distances.get(&source).copied().unwrap_or(1);
-                            source_table.set("path_length", distance)?;
-
-                            result_array.raw_set(index, source_table)?;
-                            index += 1;
-                        }
-                    }
                 }
+
                 Ok(result_array)
             },
         )?,
