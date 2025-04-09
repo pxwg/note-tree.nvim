@@ -5,6 +5,7 @@ use mlua::prelude::*;
 use regex::Regex;
 /// TODO: Seperate the graph generation logic into a separate module
 /// TODO: Add tests for the graph generation logic
+/// TODO: Reconstruct the graph generation logic and struct
 use std::collections::VecDeque;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -43,16 +44,26 @@ struct ShortestPath {
 }
 
 /// Initialize the rust log
+/// Initialize the rust log
 pub fn initialize() {
     use env_logger::{Builder, Target};
     use std::env;
+
+    // Check if logging is enabled
+    if env::var("TREE_BUILDER_ENABLE_LOG").unwrap_or_else(|_| "0".to_string()) != "1" {
+        return;
+    }
+
     use std::fs::File;
     use std::io::Write;
 
     let log_path =
         env::var("TREE_BUILDER_LOG_PATH").unwrap_or_else(|_| "tree_builder.log".to_string());
 
-    let file = File::create(&log_path).expect("Failed to create log file");
+    let file = match File::create(&log_path) {
+        Ok(file) => file,
+        Err(_) => return, // Silently fail if we can't create the log file
+    };
 
     let mut builder = Builder::new();
     builder.target(Target::Pipe(Box::new(file)));
@@ -64,8 +75,6 @@ pub fn initialize() {
     }
 
     builder.init();
-
-    // info!("Tree builder logger initialized at: {}", log_path);
 }
 
 /// Convert relative paths to absolute paths

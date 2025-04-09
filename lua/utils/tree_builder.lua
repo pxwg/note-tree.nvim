@@ -25,6 +25,7 @@ local function initialize()
   if state.initialized then
     return state.tree_builder ~= nil
   end
+  vim.env.TREE_BUILDER_ENABLE_LOG = "0"
 
   local plugin_root = get_plugin_root()
   local lib_path = plugin_root .. "/build/tree_builder_lua51"
