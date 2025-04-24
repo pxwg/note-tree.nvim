@@ -26,6 +26,7 @@ local function initialize()
     return state.tree_builder ~= nil
   end
   vim.env.TREE_BUILDER_ENABLE_LOG = "0"
+  vim.env.TREE_BUILDER_LOG_PATH = vim.fn.stdpath("data") .. "/note-tree.log"
 
   local plugin_root = get_plugin_root()
   local lib_path = plugin_root .. "/build/tree_builder_lua51"
