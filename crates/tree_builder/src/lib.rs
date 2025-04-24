@@ -44,7 +44,6 @@ struct ShortestPath {
 }
 
 /// Initialize the rust log
-/// Initialize the rust log
 pub fn initialize() {
     use env_logger::{Builder, Target};
     use std::env;
