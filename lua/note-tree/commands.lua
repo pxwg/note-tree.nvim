@@ -13,7 +13,7 @@ usrcmd("NoteTreeLocal", function(opts)
 
   local end_time = vim.loop.hrtime()
 
-  vim.api.nvim_echo({ { "  Build tree in: " .. ((end_time - start_time) / 1e6) .. " ms" } }, false, {})
+  -- vim.api.nvim_echo({ { "  Build tree in: " .. ((end_time - start_time) / 1e6) .. " ms" } }, false, {})
 end, { nargs = "?" })
 
 --- Insert a new link into the wiki file
@@ -27,7 +27,7 @@ usrcmd("NoteTreeLocalInsert", function(opts)
 
   local end_time = vim.loop.hrtime()
 
-  vim.api.nvim_echo({ { "  Build tree in: " .. ((end_time - start_time) / 1e6) .. " ms" } }, false, {})
+  -- vim.api.nvim_echo({ { "  Build tree in: " .. ((end_time - start_time) / 1e6) .. " ms" } }, false, {})
 end, { nargs = "?" })
 
 --- search and jump to the node via global tree
@@ -41,5 +41,5 @@ usrcmd("NoteTreeGlobal", function(opts)
 
   local end_time = vim.loop.hrtime()
 
-  vim.api.nvim_echo({ { "  Build tree in: " .. ((end_time - start_time) / 1e6) .. " ms" } }, false, {})
+  -- vim.api.nvim_echo({ { "  Build tree in: " .. ((end_time - start_time) / 1e6) .. " ms" } }, false, {})
 end, { nargs = "?" })
