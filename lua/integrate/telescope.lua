@@ -1,5 +1,6 @@
 --- The telescope module for the double chain graph
 local M = {}
+local conf = require("telescope.config").values
 local finders = require("telescope.finders")
 local image_preview = require("util.telescope-figure")
 local note_tree = require("note-tree")
@@ -52,18 +53,7 @@ local function double_chain_search(opts, start_node, max, base_dir)
         end,
       }),
       sorter = sorters.get_fzy_sorter(),
-
-      previewer = previewers.new_buffer_previewer({
-        title = "Preview",
-        define_preview = function(self, entry, status)
-          local filepath = entry.value
-          if filepath then
-            vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, vim.fn.readfile(filepath))
-          end
-        end,
-      }),
-      file_previewer = image_preview.file_previewer,
-      buffer_previewer_maker = image_preview.buffer_previewer_maker,
+      previewer = previewers.vim_buffer_cat.new(opts),
       attach_mappings = function(prompt_bufnr, map)
         local actions = require("telescope.actions")
         actions.select_default:replace(function()
@@ -115,18 +105,19 @@ local function double_chain_insert(opts, start_node, max, base_dir)
         end,
       }),
       sorter = sorters.get_fzy_sorter(),
-
-      previewer = previewers.new_buffer_previewer({
-        title = "Preview",
-        define_preview = function(self, entry, status)
-          local filepath = entry.value
-          if filepath then
-            vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, vim.fn.readfile(filepath))
-          end
-        end,
-      }),
-      file_previewer = image_preview.file_previewer,
-      buffer_previewer_maker = image_preview.buffer_previewer_maker,
+      previewer = previewers.vim_buffer_cat.new(opts),
+      -- previewers = conf.grep_previewer(opts),
+      -- previewer = previewers.new_buffer_previewer({
+      --   title = "Preview",
+      --   define_preview = function(self, entry, status)
+      --     local filepath = entry.value
+      --     if filepath then
+      --       vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, vim.fn.readfile(filepath))
+      --     end
+      --   end,
+      -- }),
+      -- file_previewer = image_preview.file_previewer,
+      -- buffer_previewer_maker = image_preview.buffer_previewer_maker,
       attach_mappings = function(prompt_bufnr, map)
         local actions = require("telescope.actions")
         actions.select_default:replace(function()
